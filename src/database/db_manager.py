@@ -248,3 +248,14 @@ class DatabaseManager:
             self.db_path = self.db_path
             self.ensure_tables_exist()
             raise Exception(f"创建数据库副本失败: {str(e)}")
+
+    def remove_empty_lines(self):
+        """使用正则表达式删除所有笔记中的空行"""
+        try:
+            # 匹配一个或多个空行（包括只包含空白字符的行）
+            empty_line_pattern = r'(?:\r?\n|\r)[ \t]*(?:\r?\n|\r)+'
+            # 替换为单个换行符
+            return self.find_and_replace(empty_line_pattern, '\n', use_regex=True)
+        except Exception as e:
+            print(f"删除空行时出错: {str(e)}")
+            raise e
