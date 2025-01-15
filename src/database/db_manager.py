@@ -10,9 +10,6 @@ class DatabaseManager:
         self.db_path = self.config.get('db_path')
         if self.is_initialized():
             self.ensure_tables_exist()
-        self.history = []  # 操作历史
-        self.future = []   # 被撤销的操作(用于重做)
-        self.max_history = 50  # 最大历史记录数
 
     def is_initialized(self):
         return bool(self.db_path) and os.path.exists(self.db_path)
@@ -58,7 +55,7 @@ class DatabaseManager:
                         try:
                             cursor.execute(f'ALTER TABLE notes ADD COLUMN {col_name} {col_type}')
                         except Exception as e:
-                            # 主键列无法通过 ALTER TABLE 添��，需要特殊处理
+                            # 主键列无法通过 ALTER TABLE 添加，需要特殊处理
                             if 'PRIMARY KEY' not in str(e):
                                 raise e
             
@@ -165,61 +162,23 @@ class DatabaseManager:
             
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                
-                # 保存修改前的状态用于撤销
-                cursor.execute("SELECT * FROM notes WHERE id = ?", (note_id,))
-                old_note = dict(cursor.fetchone())
-                
                 # 更新状态
                 cursor.execute("UPDATE notes SET skipped = ? WHERE id = ?", (True, note_id))
-                
-                # 记录操作历史
-                self._save_snapshot('mark_skipped', [{
-                    'id': note_id,
-                    'old_state': old_note,
-                    'new_state': {'skipped': True}
-                }])
-                
                 conn.commit()
                 return True
         except Exception as e:
             print(f"标记笔记为已跳过时出错: {str(e)}")
             return False
 
-    def _save_snapshot(self, operation_type, affected_notes):
-        """保存操作快照"""
-        snapshot = {
-            'type': operation_type,
-            'notes': affected_notes,
-            'timestamp': datetime.now()
-        }
-        
-        self.history.append(snapshot)
-        self.future.clear()  # 新操作会清空重做栈
-        
-        # 限制历史记录数量
-        if len(self.history) > self.max_history:
-            self.history.pop(0)
-            
-    def _get_note_snapshot(self, note_id):
-        """获取笔记的完整快照"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM notes WHERE id = ?", (note_id,))
-            return dict(cursor.fetchone())
-            
     def find_and_replace(self, find_pattern, replace_text, use_regex=False):
-        """增加历史记录的查找替换"""
-        affected_notes = []
+        """查找替换"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id, content FROM notes")
             notes = cursor.fetchall()
+            modified_count = 0
             
             for note_id, content in notes:
-                # 保存修改前的状态
-                old_content = content
-                
                 if use_regex:
                     try:
                         new_content = re.sub(find_pattern, replace_text, content)
@@ -231,86 +190,27 @@ class DatabaseManager:
                 if new_content != content:
                     cursor.execute("UPDATE notes SET content = ? WHERE id = ?", 
                                  (new_content, note_id))
-                    affected_notes.append({
-                        'id': note_id,
-                        'old_content': old_content,
-                        'new_content': new_content
-                    })
-            
-            if affected_notes:
-                self._save_snapshot('find_replace', affected_notes)
-                conn.commit()
-                
-            return len(affected_notes)
-
-    def undo(self):
-        """撤销上一次操作"""
-        if not self.history:
-            return False
-            
-        last_operation = self.history.pop()
-        self.future.append(last_operation)
-        
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            
-            for note in last_operation['notes']:
-                if last_operation['type'] == 'mark_skipped':
-                    # 恢复之前的状态
-                    old_state = note['old_state']
-                    cursor.execute("""
-                        UPDATE notes 
-                        SET skipped = ?
-                        WHERE id = ?
-                    """, (old_state['skipped'], note['id']))
-                # 可以在这里添加其他类型操作的撤销逻辑
-                
-            conn.commit()
-        return True
-
-    def redo(self):
-        """重做上一次撤销���操作"""
-        if not self.future:
-            return False
-            
-        next_operation = self.future.pop()
-        self.history.append(next_operation)
-        
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            
-            for note in next_operation['notes']:
-                if next_operation['type'] == 'find_replace':
-                    cursor.execute("UPDATE notes SET content = ? WHERE id = ?",
-                                 (note['new_content'], note['id']))
-                # 可以在这里添加其他类型操作的重做逻辑
-                
-            conn.commit()
-        return True
-
-    def remove_empty_lines(self):
-        """
-        Remove empty lines from all notes
-        Returns: Number of notes modified
-        """
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, content FROM notes")
-            notes = cursor.fetchall()
-            modified_count = 0
-            
-            for note_id, content in notes:
-                lines = content.splitlines()
-                new_lines = [line for line in lines if line.strip()]
-                new_content = '\n'.join(new_lines)
-                
-                if new_content != content:
-                    cursor.execute("UPDATE notes SET content = ? WHERE id = ?", 
-                                 (new_content, note_id))
                     modified_count += 1
             
             conn.commit()
             return modified_count
+
+    def restore_skipped_note(self, note_id):
+        """将已跳过的笔记恢复到未导入状态"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                # 更新状态：取消跳过标记
+                cursor.execute("""
+                    UPDATE notes 
+                    SET skipped = ?, imported = ? 
+                    WHERE id = ?
+                """, (False, False, note_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"恢复已跳过笔记时出错: {str(e)}")
+            return False
 
     def create_database_copy(self):
         """创建数据库副本，替换已有时间戳"""
@@ -348,33 +248,3 @@ class DatabaseManager:
             self.db_path = self.db_path
             self.ensure_tables_exist()
             raise Exception(f"创建数据库副本失败: {str(e)}")
-
-    def restore_skipped_note(self, note_id):
-        """将已跳过的笔记恢复到未导入状态"""
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # 保存修改前的状态用于撤销
-                cursor.execute("SELECT * FROM notes WHERE id = ?", (note_id,))
-                old_note = dict(cursor.fetchone())
-                
-                # 更新状态：取消跳过标记
-                cursor.execute("""
-                    UPDATE notes 
-                    SET skipped = ?, imported = ? 
-                    WHERE id = ?
-                """, (False, False, note_id))
-                
-                # 记录操作历史
-                self._save_snapshot('restore_skipped', [{
-                    'id': note_id,
-                    'old_state': old_note,
-                    'new_state': {'skipped': False, 'imported': False}
-                }])
-                
-                conn.commit()
-                return True
-        except Exception as e:
-            print(f"恢复已跳过笔记时出错: {str(e)}")
-            return False

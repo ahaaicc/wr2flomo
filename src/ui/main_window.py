@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         print("Setting up UI...")
-        self.setWindowTitle("读书笔记导入flomo")
+        self.setWindowTitle("读书笔记导入flomo by Oahc")
         self.setGeometry(100, 100, 1000, 600)
 
         main_layout = QHBoxLayout()
@@ -302,23 +302,6 @@ class MainWindow(QMainWindow):
         remove_empty_btn.clicked.connect(self.remove_empty_lines)
         layout.addWidget(remove_empty_btn)
 
-        # 添加撤销重做按钮
-        undo_redo_layout = QHBoxLayout()
-        
-        self.undo_btn = QPushButton("撤销")
-        self.undo_btn.setShortcut("Ctrl+Z")
-        self.undo_btn.clicked.connect(self.undo_operation)
-        self.undo_btn.setEnabled(False)
-        
-        self.redo_btn = QPushButton("重做")
-        self.redo_btn.setShortcut("Ctrl+Y")
-        self.redo_btn.clicked.connect(self.redo_operation)
-        self.redo_btn.setEnabled(False)
-        
-        undo_redo_layout.addWidget(self.undo_btn)
-        undo_redo_layout.addWidget(self.redo_btn)
-        layout.addLayout(undo_redo_layout)
-
         right_widget.setLayout(layout)
         return right_widget
 
@@ -341,7 +324,6 @@ class MainWindow(QMainWindow):
                 modified_count = self.db_manager.find_and_replace(
                     find_text, replace_text, use_regex)
                 self.update_note_list()
-                self.update_undo_redo_buttons()  # 更新按钮状态
                 QMessageBox.information(self, "完成", 
                                       f"已修改 {modified_count} 条笔记")
             except re.error:
@@ -655,29 +637,6 @@ class MainWindow(QMainWindow):
         self.note_stats_label.setEnabled(True)
         self._note_tabs.setEnabled(True)
         # 启用其他可能依赖数据库的UI元素
-
-    def update_undo_redo_buttons(self):
-        """更新撤销重做按钮状态"""
-        self.undo_btn.setEnabled(bool(self.db_manager.history))
-        self.redo_btn.setEnabled(bool(self.db_manager.future))
-
-    def undo_operation(self):
-        """执行撤销操作"""
-        if self.db_manager.undo():
-            self.update_note_list()
-            self.update_undo_redo_buttons()
-            QMessageBox.information(self, "完成", "已撤销上一次操作")
-        else:
-            QMessageBox.warning(self, "提示", "没有可撤销的操作")
-
-    def redo_operation(self):
-        """执行重做操作"""
-        if self.db_manager.redo():
-            self.update_note_list()
-            self.update_undo_redo_buttons()
-            QMessageBox.information(self, "完成", "已重做操作")
-        else:
-            QMessageBox.warning(self, "提示", "没有可重做的操作")
 
     def update_db_name_display(self):
         """更新数据库名称显示"""

@@ -29,7 +29,7 @@ class NoteImporter:
             # 使用默认样式
             self.STYLE_SHEET = """
                 * {
-                    font-family: Arial, "Microsoft YaHei", SimSun, sans-serif;
+                    font-family: consolas, Arial, "Microsoft YaHei", SimSun, sans-serif;
                 }
             """
         
