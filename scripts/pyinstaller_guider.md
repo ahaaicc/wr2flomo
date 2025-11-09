@@ -14,12 +14,13 @@
 ## macOS 构建命令
 
 ```bash
-pyinstaller --name wr2flomo --windowed --icon resources/icons/app.icns --add-data "resources:resources" --add-data "resources/styles/minimalist.qss:resources/styles" --hidden-import "PyQt6.QtCore" --hidden-import "PyQt6.QtWidgets" --hidden-import "PyQt6.QtGui" --runtime-hook "scripts/macos_hook.py" src/main.py
+pyinstaller --name wr2flomo --onefile --windowed --icon resources/icons/app.icns --add-data "resources:resources" --add-data "resources/styles/minimalist.qss:resources/styles" --hidden-import "PyQt6.QtCore" --hidden-import "PyQt6.QtWidgets" --hidden-import "PyQt6.QtGui" --runtime-hook "scripts/macos_hook.py" src/main.py
 ```
 
 ### 命令解析
 
 - `--name wr2flomo`: 指定输出的应用名称为 `wr2flomo`。
+- `--onefile`: 将所有内容打包成一个独立的执行文件。
 - `--windowed`: 创建一个无控制台窗口的 GUI 应用。
 - `--icon resources/icons/app.icns`: 为应用指定 `.icns` 格式的图标。
 - `--add-data "source:destination"`: 将额外的文件或目录打包。冒号是 macOS/Linux 上的路径分隔符。
@@ -32,12 +33,13 @@ pyinstaller --name wr2flomo --windowed --icon resources/icons/app.icns --add-dat
 ## Windows 构建命令
 
 ```powershell
-pyinstaller --name wr2flomo --windowed --icon resources/icons/app.ico --add-data "resources;resources" --add-data "resources/styles/minimalist.qss;resources/styles" --hidden-import "PyQt6.QtCore" --hidden-import "PyQt6.QtWidgets" --hidden-import "PyQt6.QtGui" src/main.py
+pyinstaller --name wr2flomo --onefile --windowed --icon resources/icons/app.ico --add-data "resources;resources" --add-data "resources/styles/minimalist.qss;resources/styles" --hidden-import "PyQt6.QtCore" --hidden-import "PyQt6.QtWidgets" --hidden-import "PyQt6.QtGui" src/main.py
 ```
 
 ### 命令解析
 
 - 大部分参数与 macOS 版本含义相同。
+- `--onefile`: 将所有内容打包成一个独立的执行文件。
 - `--icon resources/icons/app.ico`: 为应用指定 Windows 平台所需的 `.ico` 格式图标。
 - **路径分隔符**: 注意在 Windows 上，`--add-data` 参数的源和目标路径之间使用分号 `;` 分隔，而不是冒号 `:`。
 - Windows 构建不需要 `runtime-hook` 脚本。

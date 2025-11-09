@@ -12,6 +12,7 @@ def get_pyinstaller_args():
 
     base_args = [
         '--name', 'wr2flomo',
+        '--onefile',
         '--windowed',
         '--noconfirm',
         '--add-data', f'resources{add_data_separator}resources',

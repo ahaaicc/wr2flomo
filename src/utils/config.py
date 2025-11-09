@@ -5,13 +5,14 @@ import keyring
 
 class Config:
     def __init__(self):
-        self.config_file = 'config.json'
+        # 创建用户专属的配置目录
+        app_dir = os.path.join(os.path.expanduser('~'), '.wr2flomo')
+        os.makedirs(app_dir, exist_ok=True)
+        self.config_file = os.path.join(app_dir, 'config.json')
+
         self.key = self.get_or_create_key()
         self.fernet = Fernet(self.key)
         self.config = self.load_config()
-        self.config = {
-            'font_size': 14,  # 添加默认字体大小
-        }
 
     def get_or_create_key(self):
         key = keyring.get_password("wr2flomo", "encryption_key")
@@ -31,6 +32,8 @@ class Config:
         
         if 'db_path' not in config:
             config['db_path'] = ''
+        if 'font_size' not in config:
+            config['font_size'] = 14
         
         return config
 
