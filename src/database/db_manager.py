@@ -1,7 +1,7 @@
 import sqlite3
 from contextlib import contextmanager
 import os
-import re
+import regex as re
 from datetime import datetime
 import codecs
 
@@ -179,15 +179,25 @@ class DatabaseManager:
             return False
 
     def find_and_replace(self, find_pattern, replace_text, use_regex=False):
-        """查找替换"""
+        """查找替换，使用 regex 库并提供稳健的输入处理"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id, content FROM notes")
             notes = cursor.fetchall()
             modified_count = 0
             
-            # 对替换文本进行反转义，以正确处理 \1, \n 等特殊字符
-            processed_replace_text = codecs.decode(replace_text, 'unicode_escape')
+            processed_replace_text = replace_text
+            if use_regex:
+                # 稳健的转义处理流程，在应用层闭环
+                # 1. 用户想要输入真实的 \n (换行) 或 \t (制表符), 他们会输入 \\n 或 \\t
+                #    我们先把这些明确的转义序列转换为真实的字符
+                processed_replace_text = processed_replace_text.replace('\\\\', '\\').replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r')
+                
+                # 2. 然后，我们将用户输入的、用于捕获组的 $1 或 \1 统一转换为引擎能识别的 \1 格式
+                #    使用一个不会被用户轻易输入的临时标记来避免冲突
+                processed_replace_text = re.sub(r'\\(\d+)', r'__TEMP_BACKSLASH_GROUP_\1__', processed_replace_text)
+                processed_replace_text = re.sub(r'\$(\d+)', r'\\\1', processed_replace_text)
+                processed_replace_text = re.sub(r'__TEMP_BACKSLASH_GROUP_(\d+)__', r'\\\1', processed_replace_text)
 
             for note_id, content in notes:
                 if use_regex:
