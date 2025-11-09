@@ -41,6 +41,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.db_manager = db_manager
         self.config = config
+        self.unsaved_changes = {} # 用来暂存未保存的笔记
+        self.is_dirty = False # 标记是否有未保存的修改
         
         # 基础样式表
         self.base_style_sheet = style_sheet if style_sheet else ""
@@ -59,7 +61,8 @@ class MainWindow(QMainWindow):
         
         # 初始化 note_editor
         self.note_editor = NoteEditorWidget({"id": None, "content": ""}, self)
-        self.note_editor.note_updated.connect(self.on_note_updated)
+        self.note_editor.note_changed_locally.connect(self.on_note_changed_locally)
+        self.note_editor.save_triggered.connect(self.on_save_triggered)
         
         if style_sheet:
             app = QApplication.instance()
@@ -123,11 +126,6 @@ class MainWindow(QMainWindow):
         print("UI setup complete.")
 
         self.setup_shortcuts()
-
-        # 创建笔记编辑器
-        self.note_editor = NoteEditorWidget({"id": None, "content": ""}, self)
-        self.note_editor.note_updated.connect(self.on_note_updated)
-        self.note_editor.hide()  # 初始时隐藏编辑器
 
         self._note_tabs.currentChanged.connect(self.on_tab_changed)
 
@@ -200,6 +198,11 @@ class MainWindow(QMainWindow):
 
         # 笔记操作按钮
         button_layout = QHBoxLayout()
+        
+        save_all_btn = QPushButton("保存全部笔记")
+        save_all_btn.clicked.connect(self.save_all_changes)
+        button_layout.addWidget(save_all_btn)
+
         paste_btn = QPushButton("粘贴读书笔记")
         paste_btn.clicked.connect(self.open_note_splitter)
         button_layout.addWidget(paste_btn)
@@ -453,23 +456,35 @@ class MainWindow(QMainWindow):
 
     def load_database(self):
         """加载数据库"""
+        if self.is_dirty:
+            reply = QMessageBox.question(self, '未保存的修改',
+                                       "您有未保存的修改，您想在加载新库前保存它们吗？",
+                                       QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
+            if reply == QMessageBox.StandardButton.Save:
+                self.save_all_changes()
+            elif reply == QMessageBox.StandardButton.Cancel:
+                return
+
         file_dialog = QFileDialog()
-        db_path, _ = file_dialog.getOpenFileName(
-            self,
-            "选择数据库文件",
-            "",
-            "SQLite 数据库 (*.db)"
-        )
-        
-        if db_path:
+        file_dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+        if file_dialog.exec():
+            db_path = file_dialog.selectedFiles()[0]
             try:
-                self.db_manager.db_path = db_path
-                self.db_manager.ensure_tables_exist()
-                self.config.set('db_path', db_path)
-                self.update_db_name_display()
-                self.enable_features()
+                # 在加载新数据库前清除旧数据
+                self.clear_ui_lists()
+                
+                self.db_manager.initialize_database(db_path)
+                self.db_name_label.setText(os.path.basename(db_path))
+                self.update_note_list()
+                print("Database loaded.")
             except Exception as e:
-                QMessageBox.warning(self, "错误", f"加载数据库失败：{str(e)}")
+                QMessageBox.critical(self, "错误", f"加载数据库失败: {str(e)}")
+
+    def clear_ui_lists(self):
+        """清空所有笔记列表的UI显示"""
+        self._unimported_list.clear()
+        self._imported_list.clear()
+        self._skipped_list.clear()
 
     def create_database_copy(self):
         """创建当前数据库的副本并切换到新数据库"""
@@ -767,6 +782,71 @@ class MainWindow(QMainWindow):
         # 合并基础样式和字体样式
         complete_style = self.base_style_sheet + font_style
         self.setStyleSheet(complete_style)
+
+    def on_note_changed_locally(self, note):
+        """当笔记在编辑器中被修改时调用"""
+        note_id = note.get('id')
+        if note_id is not None:
+            self.unsaved_changes[note_id] = note['content']
+            self.set_dirty(True)
+
+    def on_save_triggered(self, note):
+        """当用户在编辑器中点击保存时调用"""
+        note_id = note.get('id')
+        if note_id is not None:
+            self.db_manager.update_note(note)
+            # 从 unsaved_changes 中移除
+            if note_id in self.unsaved_changes:
+                del self.unsaved_changes[note_id]
+            # 如果没有其他未保存的更改，则更新状态
+            if not self.unsaved_changes:
+                self.set_dirty(False)
+            print(f"Note {note_id} saved to database.")
+
+    def save_all_changes(self):
+        """保存所有未保存的修改"""
+        if not self.is_dirty:
+            print("No changes to save.")
+            return
+
+        for note_id, content in self.unsaved_changes.items():
+            note = {'id': note_id, 'content': content}
+            self.db_manager.update_note_content(note_id, content)
+
+        self.unsaved_changes.clear()
+        self.set_dirty(False)
+        print("All changes saved.")
+        QMessageBox.information(self, "成功", "所有笔记已保存")
+
+    def set_dirty(self, dirty):
+        """设置窗口的“脏”状态，并更新标题"""
+        if self.is_dirty == dirty:
+            return
+        
+        self.is_dirty = dirty
+        
+        title = self.windowTitle()
+        if dirty and not title.endswith('*'):
+            self.setWindowTitle(title + '*')
+        elif not dirty and title.endswith('*'):
+            self.setWindowTitle(title[:-1])
+
+    def closeEvent(self, event):
+        """关闭窗口时检查未保存的修改"""
+        if self.is_dirty:
+            reply = QMessageBox.question(self, '未保存的修改',
+                                           "您有未保存的修改，您想在退出前保存它们吗？",
+                                           QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
+
+            if reply == QMessageBox.StandardButton.Save:
+                self.save_all_changes()
+                event.accept()
+            elif reply == QMessageBox.StandardButton.Discard:
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
 
 
 

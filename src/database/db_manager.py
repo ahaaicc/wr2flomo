@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import os
 import re
 from datetime import datetime
+import codecs
 
 class DatabaseManager:
     def __init__(self, config):
@@ -88,6 +89,13 @@ class DatabaseManager:
             ''', (note['content'], note.get('imported', False), note['id']))
             conn.commit()
         print(f"Note {note['id']} updated in database")
+
+    def update_note_content(self, note_id, content):
+        """仅更新笔记的内容"""
+        with self.get_connection() as conn:
+            conn.execute('UPDATE notes SET content = ? WHERE id = ?', (content, note_id))
+            conn.commit()
+        print(f"Note {note_id} content updated in database")
 
     def get_notes(self, imported=False):
         try:
@@ -178,10 +186,13 @@ class DatabaseManager:
             notes = cursor.fetchall()
             modified_count = 0
             
+            # 对替换文本进行反转义，以正确处理 \1, \n 等特殊字符
+            processed_replace_text = codecs.decode(replace_text, 'unicode_escape')
+
             for note_id, content in notes:
                 if use_regex:
                     try:
-                        new_content = re.sub(find_pattern, replace_text, content)
+                        new_content = re.sub(find_pattern, processed_replace_text, content)
                     except re.error:
                         continue
                 else:
